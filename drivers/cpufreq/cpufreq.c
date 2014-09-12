@@ -207,7 +207,7 @@ static struct cpufreq_policy *__cpufreq_cpu_get(unsigned int cpu, int sysfs)
 	if (!data)
 		goto err_out_put_module;
 
-	if (!kobject_get(&data->kobj))
+	if (!sysfs && !kobject_get(&data->kobj))
 		goto err_out_put_module;
 
 	spin_unlock_irqrestore(&cpufreq_driver_lock, flags);
@@ -220,16 +220,35 @@ err_out_unlock:
 err_out:
 	return NULL;
 }
+
+struct cpufreq_policy *cpufreq_cpu_get(unsigned int cpu)
+{
+	return __cpufreq_cpu_get(cpu, 0);
+}
 EXPORT_SYMBOL_GPL(cpufreq_cpu_get);
 
+static struct cpufreq_policy *cpufreq_cpu_get_sysfs(unsigned int cpu)
+{
+	return __cpufreq_cpu_get(cpu, 1);
+}
+
+static void __cpufreq_cpu_put(struct cpufreq_policy *data, int sysfs)
+{
+	if (!sysfs)
+		kobject_put(&data->kobj);
+	module_put(cpufreq_driver->owner);
+}
 
 void cpufreq_cpu_put(struct cpufreq_policy *data)
 {
-	kobject_put(&data->kobj);
-	module_put(cpufreq_driver->owner);
+	__cpufreq_cpu_put(data, 0);
 }
 EXPORT_SYMBOL_GPL(cpufreq_cpu_put);
 
+static void cpufreq_cpu_put_sysfs(struct cpufreq_policy *data)
+{
+	__cpufreq_cpu_put(data, 1);
+}
 
 /*********************************************************************
  *            EXTERNALLY AFFECTING FREQUENCY CHANGES                 *
@@ -330,7 +349,6 @@ void cpufreq_notify_transition(struct cpufreq_freqs *freqs, unsigned int state)
 	}
 }
 EXPORT_SYMBOL_GPL(cpufreq_notify_transition);
-
 /**
  * cpufreq_notify_utilization - notify CPU userspace about CPU utilization
  * change
@@ -344,6 +362,10 @@ void cpufreq_notify_utilization(struct cpufreq_policy *policy,
 	if (policy)
 		policy->util = util;
 }
+
+/*********************************************************************
+ *                          SYSFS INTERFACE                          *
+ *********************************************************************/
 
 static struct cpufreq_governor *__find_governor(const char *str_governor)
 {
@@ -427,6 +449,7 @@ show_one(cpuinfo_transition_latency, cpuinfo.transition_latency);
 show_one(scaling_min_freq, min);
 show_one(scaling_max_freq, max);
 show_one(scaling_cur_freq, cur);
+show_one(cpu_utilization, util);
 
 static int __cpufreq_set_policy(struct cpufreq_policy *data,
 				struct cpufreq_policy *policy);
@@ -668,6 +691,7 @@ cpufreq_freq_attr_ro(scaling_cur_freq);
 cpufreq_freq_attr_ro(bios_limit);
 cpufreq_freq_attr_ro(related_cpus);
 cpufreq_freq_attr_ro(affected_cpus);
+cpufreq_freq_attr_ro(cpu_utilization);
 cpufreq_freq_attr_rw(scaling_min_freq);
 cpufreq_freq_attr_rw(scaling_max_freq);
 cpufreq_freq_attr_rw(scaling_governor);
@@ -683,6 +707,7 @@ static struct attribute *default_attrs[] = {
 	&scaling_min_freq.attr,
 	&scaling_max_freq.attr,
 	&affected_cpus.attr,
+	&cpu_utilization.attr,
 	&related_cpus.attr,
 	&scaling_governor.attr,
 	&scaling_driver.attr,
@@ -705,25 +730,12 @@ static ssize_t show(struct kobject *kobj, struct attribute *attr, char *buf)
 	struct cpufreq_policy *policy = to_policy(kobj);
 	struct freq_attr *fattr = to_attr(attr);
 	ssize_t ret = -EINVAL;
-	unsigned long flags;
-
-	spin_lock_irqsave(&cpufreq_driver_lock, flags);
-
-	if (!cpufreq_driver) {
-		spin_unlock_irqrestore(&cpufreq_driver_lock, flags);
-		return ret;
-	}
-
-	policy = per_cpu(cpufreq_cpu_data, policy->cpu);
-	if (!policy) {
-		spin_unlock_irqrestore(&cpufreq_driver_lock, flags);
-		return ret;
-	}
-
-	spin_unlock_irqrestore(&cpufreq_driver_lock, flags);
+	policy = cpufreq_cpu_get_sysfs(policy->cpu);
+	if (!policy)
+		goto no_policy;
 
 	if (lock_policy_rwsem_read(policy->cpu) < 0)
-		return ret;
+		goto fail;
 
 	if (fattr->show)
 		ret = fattr->show(policy, buf);
@@ -731,6 +743,9 @@ static ssize_t show(struct kobject *kobj, struct attribute *attr, char *buf)
 		ret = -EIO;
 
 	unlock_policy_rwsem_read(policy->cpu);
+fail:
+	cpufreq_cpu_put_sysfs(policy);
+no_policy:
 	return ret;
 }
 
@@ -740,25 +755,12 @@ static ssize_t store(struct kobject *kobj, struct attribute *attr,
 	struct cpufreq_policy *policy = to_policy(kobj);
 	struct freq_attr *fattr = to_attr(attr);
 	ssize_t ret = -EINVAL;
-	unsigned long flags;
-
-	spin_lock_irqsave(&cpufreq_driver_lock, flags);
-
-	if (!cpufreq_driver) {
-		spin_unlock_irqrestore(&cpufreq_driver_lock, flags);
-		return ret;
-	}
-
-	policy = per_cpu(cpufreq_cpu_data, policy->cpu);
-	if (!policy) {
-		spin_unlock_irqrestore(&cpufreq_driver_lock, flags);
-		return ret;
-	}
-
-	spin_unlock_irqrestore(&cpufreq_driver_lock, flags);
+	policy = cpufreq_cpu_get_sysfs(policy->cpu);
+	if (!policy)
+		goto no_policy;
 
 	if (lock_policy_rwsem_write(policy->cpu) < 0)
-		return ret;
+		goto fail;
 
 	if (fattr->store)
 		ret = fattr->store(policy, buf, count);
@@ -766,6 +768,9 @@ static ssize_t store(struct kobject *kobj, struct attribute *attr,
 		ret = -EIO;
 
 	unlock_policy_rwsem_write(policy->cpu);
+fail:
+	cpufreq_cpu_put_sysfs(policy);
+no_policy:
 	return ret;
 }
 
@@ -1357,26 +1362,12 @@ unsigned int cpufreq_quick_get_util(unsigned int cpu)
 EXPORT_SYMBOL(cpufreq_quick_get_util);
 
 /**
- * cpufreq_quick_get_util - get the CPU utilization from policy->util
+ * cpufreq_quick_get - get the CPU frequency (in kHz) from policy->cur
  * @cpu: CPU number
  *
- * This is the last known util, without actually getting it from the driver.
- * Return value will be same as what is shown in util in sysfs.
+ * This is the last known freq, without actually getting it from the driver.
+ * Return value will be same as what is shown in scaling_cur_freq in sysfs.
  */
-unsigned int cpufreq_quick_get_util(unsigned int cpu)
-{
-	struct cpufreq_policy *policy = cpufreq_cpu_get(cpu);
-	unsigned int ret_util = 0;
-
-	if (policy) {
-		ret_util = policy->util;
-		cpufreq_cpu_put(policy);
-	}
-
-	return ret_util;
-}
-EXPORT_SYMBOL(cpufreq_quick_get_util);
-
 unsigned int cpufreq_quick_get(unsigned int cpu)
 {
 	struct cpufreq_policy *policy = cpufreq_cpu_get(cpu);
@@ -1980,7 +1971,6 @@ static int __cpuinit cpufreq_cpu_callback(struct notifier_block *nfb,
 		case CPU_ONLINE:
 		case CPU_ONLINE_FROZEN:
 			cpufreq_add_dev(dev, NULL);
-			trace_cpu_state_frequency(cpu, 1);
 			break;
 		case CPU_DOWN_PREPARE:
 		case CPU_DOWN_PREPARE_FROZEN:
@@ -1992,10 +1982,6 @@ static int __cpuinit cpufreq_cpu_callback(struct notifier_block *nfb,
 		case CPU_DOWN_FAILED:
 		case CPU_DOWN_FAILED_FROZEN:
 			cpufreq_add_dev(dev, NULL);
-			trace_cpu_state_frequency(cpu, 1);
-			break;
-		case CPU_POST_DEAD:
-			trace_cpu_state_frequency(cpu, 0);
 			break;
 		}
 	}
