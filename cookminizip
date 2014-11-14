@@ -13,8 +13,8 @@ toolchainDir="/home/zaichron-lin/AndroidDev/AAtoolchains/linaro_toolchains_2014/
 #Path where you would like the kernel to be outputed
 exportDir="/home/zaichron-lin/Desktop/Copy/AndroidDev/Kernz/m8whl/out" #( Example /home/user/Desktop )
 #Change default to what ever you like
-kernel1name="FlarPort-m8-v1.08.1-GPE"
-kernel2name="FlarPort-m8-v1.xx.x-GPE"
+kernel1name="Hypernova-m8-v1.3.5-GPE"
+kernel2name="Hypernova-m8-v1.x.x-GPE"
 kernel3name="Default-3"
 #Do not edit
 now=$(date +"%m-%d-%Y-%H-%M")
