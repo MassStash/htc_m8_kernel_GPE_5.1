@@ -103,4 +103,3 @@ cd $DIR
 echo
 echo
 echo " Check $exportDir for $kernelName-$now.zip and repeat "
-sleep 10
