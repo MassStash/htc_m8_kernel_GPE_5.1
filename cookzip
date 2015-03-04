@@ -63,32 +63,6 @@ select opt in $OPTIONS; do
     fi
 done
 
-echo
-echo
-echo " Compiling dt.img brah "
-./dtb -o arch/arm/boot/dt.img -s 2048 -d "htc,project-id = <" -p ./scripts/dtc/ ./arch/arm/boot/
-
-echo
-echo
-echo " Now the kernel is going to get packaged in a flashable zip yo"
-
-echo
-echo
-echo
-echo
-echo " Moved zImage "
-cp arch/arm/boot/zImage /home/zaichron-lin/Desktop/Copy/AndroidDev/Kernz/m8/Hypernova-GPE-5.0.1
-
-echo
-echo
-echo " Moved dt.img "
-cp arch/arm/boot/dt.img /home/zaichron-lin/Desktop/Copy/AndroidDev/Kernz/m8/Hypernova-GPE-5.0.1/dtb
-
-echo
-echo
-echo " Moving modules "
-find -iname *.ko | xargs cp -t /home/zaichron-lin/Desktop/Copy/AndroidDev/Kernz/m8/Hypernova-GPE-5.0.1/system/lib/modules
-
 cd /home/zaichron-lin/Desktop/Copy/AndroidDev/Kernz/m8/Hypernova-GPE-5.0.1
 
 echo
