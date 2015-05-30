@@ -116,7 +116,7 @@ static int _check_context_queue(struct adreno_context *drawctxt)
 {
 	int ret;
 
-	mutex_lock(&drawctxt->mutex);
+	spin_lock(&drawctxt->lock);
 
 	/*
 	 * Wake up if there is room in the context or if the whole thing got
@@ -128,7 +128,7 @@ static int _check_context_queue(struct adreno_context *drawctxt)
 	else
 		ret = drawctxt->queued < _context_cmdqueue_size ? 1 : 0;
 
-	mutex_unlock(&drawctxt->mutex);
+	spin_unlock(&drawctxt->lock);
 
 	return ret;
 }
